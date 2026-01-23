@@ -1,59 +1,28 @@
-name: Terraform CI using Vault (GitHub OIDC)
-
-on:
-  push:
-    branches:
-      - main
+name: Vault Terraform Demo
+on: [push]
 
 permissions:
-  id-token: write
+  id-token: write  # Crucial for OIDC
   contents: read
 
 jobs:
-  terraform:
+  deploy:
     runs-on: ubuntu-latest
-
     steps:
-      # 1. Checkout repo
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # 2. Install Vault CLI
-      - name: Install Vault CLI
-        run: |
-          VAULT_VERSION=1.15.6
-          curl -fsSL https://releases.hashicorp.com/vault/${VAULT_VERSION}/vault_${VAULT_VERSION}_linux_amd64.zip -o vault.zip
-          unzip -o vault.zip
-          sudo mv vault /usr/local/bin/vault
-          vault version
-
-      # 3. Authenticate to Vault using JWT (OFFICIAL METHOD)
-      - name: Authenticate to Vault
-        env:
-          VAULT_ADDR: http://98.82.141.249:8200
-        run: |
-          VAULT_TOKEN=$(vault write -field=token auth/jwt/login \
-            role=github-actions \
-            jwt=$ACTIONS_ID_TOKEN_REQUEST_TOKEN)
-          echo "VAULT_TOKEN=$VAULT_TOKEN" >> $GITHUB_ENV
-
-      # 4. Read AWS credentials from Vault
-      - name: Read AWS credentials
-        env:
-          VAULT_ADDR: http://98.82.141.249:8200
-        run: |
-          echo "TF_VAR_aws_access_key=$(vault kv get -field=access_key kv/aws)" >> $GITHUB_ENV
-          echo "TF_VAR_aws_secret_key=$(vault kv get -field=secret_key kv/aws)" >> $GITHUB_ENV
-
-      # 5. Install Terraform
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - name: Fetch AWS Credentials from Vault
+        uses: hashicorp/vault-action@v2
         with:
-          terraform_version: "1.14.4"
+          url: http://44.202.202.161:8200
+          role: gh-actions-role
+          method: jwt
+          secrets: |
+            aws/creds/terraform-role access_key | AWS_ACCESS_KEY_ID ;
+            aws/creds/terraform-role secret_key | AWS_SECRET_ACCESS_KEY
 
-      # 6. Terraform init & apply
-      - name: Terraform Apply
-        working-directory: terraform
-        run: |
+      - uses: hashicorp/setup-terraform@v3
+      - run: |
+          cd terraform
           terraform init
           terraform apply -auto-approve
